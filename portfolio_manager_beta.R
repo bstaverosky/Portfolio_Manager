@@ -16,6 +16,8 @@ library(tibble)
 library(quantmod)
 library(plyr)
 
+#### DID IT WORK?????? #####
+
 get_returns <- function(symbols){
   lapply(symbols, FUN = function(x){
     print(x)
