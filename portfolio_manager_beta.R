@@ -16,144 +16,89 @@ library(tibble)
 library(quantmod)
 library(plyr)
 
-#### DID IT WORK?????? #####
-
-get_returns <- function(symbols){
-  lapply(symbols, FUN = function(x){
-    print(x)
-    df <- getSymbols(x, src = "yahoo", from = "1900-01-01", auto.assign = FALSE)
-    df <- df[,4]
-    names(df) <- gsub(".Close", "", names(df))
-    returns <- Return.calculate(df)
-    returns
-  })
-}
-
-
-sp500_wiki <- read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
-
-symbols_table <- sp500_wiki %>%
-  html_nodes(xpath='//*[@id="mw-content-text"]/div/table[1]') %>%
-  html_table()
-symbols_table <- symbols_table[[1]]
-symbols <- as.character(symbols_table$Symbol)
-
-symbols <- gsub("\\.","-", symbols) 
-
-### DOWNLOAD UNIVERSE PRICES ###
-# prices <- lapply(symbols, FUN = function(x){
-#   print(x)
-#   df <- getSymbols(x, src = "yahoo", from = "1900-01-01", auto.assign = FALSE)
-#   df <- df[,4]
-#   names(df) <- gsub(".Close", "", names(df))
-#   #returns <- Return.calculate(df)
-#   #returns
-#   df
-# })
-
+spy_data <- get_sp500_data()
+symbols  <- spy_data$Symbol
+prices   <- get_closing_prices(symbols)
 #save(prices, file = "/home/brian/Documents/projects/portfolio_manager/prices.RData")
-
 load("/home/brian/Documents/projects/portfolio_manager_data/prices.RData")
 #write.csv(prices, file="/var/lib/mysql-files/prices.csv")
 
-### CALCULATE DAILY RETURNS ###
-returns <- lapply(prices, FUN = function(x){
-  print(names(x))
-  returns <- Return.calculate(x)
-  returns
-})
-
+returns <- pricetoreturn(prices)
 ### Make Return DataFrame
-retdf <- do.call("cbind", returns)
-
-### SAVE TO MYSQL SERVER ###
-#write.csv(retdf, file="/home/brian/Documents/projects/portfolio_manager_data/returns.csv")
-
+retdf   <- do.call("cbind", returns)
 
 ##### GET FUNDAMENTAL INDEX RETURNS #####
-
 fbase_symbols <- c("SPHQ", "RPG", "RPV")
-fbase <- get_returns(fbase_symbols)
+fbase         <- get_returns(fbase_symbols)
 #fbase <- do.call("cbind", fbase)
 
 ### GET BENCHMARK RETURNS ###
 bmk <- get_returns("SPY")[[1]]
 
-# Create active return dataframe
+# List of active returns
+actret <- get_act_ret(returns, bmk)
 
-actret <- lapply(returns, FUN = function(x){
-  df <- merge(x, bmk)
-  df <- df[complete.cases(df),]
-  df[,1] <- df[,1]-df[,2]
-  df[,1]
-})
+### GET ACTIVE FACTOR RETURNS ###
+fret <- get_act_ret(fbase, bmk)
 
-# get active factor returns
+### GET QUALITY CORRELATIONS ###
 
-fret <- lapply(fbase, FUN = function(x){
-  df <- merge(x, bmk)
-  df <- df[complete.cases(df),]
-  df[,1] <- df[,1]-df[,2]
-  df[,1]
-})
+# olist <- list()
+# x <- fret[[1]]
+#   for(i in actret){
+#     print(names(i))
+#     outp  <- roll_cor(x, i)
+#     olist[[names(i)]] <- outp
+#   }
+#   
+#save(olist, file = "/home/brian/Documents/projects/portfolio_manager_data/qualcor.RData")
+load("/home/brian/Documents/projects/portfolio_manager_data/qualcor.RData")
 
-# get correlations
+# Top Scoring Quality Names
+tqual <- tail(qual,1)
+tqual <- t(tqual)
 
-# Make function that takes xts of factor return and xts of stock return
-# and returns a data frame of rolling correlations
+##### CREATE A FUNCTION FOR CBINDING LIST OF DATAFRAMES WITH DIFFERENT LENGTHS #####
 
-x <- fret[[1]]
-y <- actret[[1]]
+dflist_out <- cbind_diff_frames(olist)
+qual       <- do.call("cbind",dflist_out)
+save(qual, file = "/home/brian/Documents/projects/portfolio_manager_data/qualdf.RData")
+load("/home/brian/Documents/projects/portfolio_manager_data/qualdf.RData")
 
+##### GET GROWTH CORRELATIONS #####
 
-
-
-roll_cor <- function(x, y){
-  df <- merge(x, y)
-  df <- df[complete.cases(df),]
-  olst <- list()
-  if(nrow(df)>253){
-    for (j in 253:nrow(df)){
-      #print(j)
-      jdate <- index(df)[[j]]
-      subf <- df[((j-252):j),]
-      cr   <- cor(subf[,1],subf[,2])
-      
-      outdf <- data.frame(correlation = cr)
-      names(outdf) <- names(df)[[2]]
-      row.names(outdf) <- jdate
-      olst[[jdate]] <- outdf
-    }
-  } else {
-    jdate <- tail(index(df),1)
-    outdf <- data.frame(correlation = NA)
-    row.names(outdf) <- jdate
-    olst[[jdate]] <- outdf
+glist <- list()
+x <- fret[[2]]
+  for(i in actret){
+    print(names(i))
+    outp  <- roll_cor(x, i, window = 253)
+    glist[[names(i)]] <- outp
   }
-  outdf <- do.call("rbind", olst)
-  outdf
+
+save(glist, file = "/home/brian/Documents/projects/portfolio_manager_data/growth_cor_list.RData")
+
+dflist_out <- cbind_diff_frames(glist)
+growth     <- do.call("cbind", dflist_out)
+save(growth, file = "/home/brian/Documents/projects/portfolio_manager_data/growthdf.RData")
+load("/home/brian/Documents/projects/portfolio_manager_data/growthdf.RData")
+
+# Top Scoring Growth Names
+test  <- tail(growth, 1)
+test2 <- t(test) 
+
+##### GET VALUE CORRELATIONS #####
+
+vlist <- list()
+x <- fret[[3]]
+for(i in actret){
+  print(names(i))
+  outp  <- roll_cor(x, i, window = 253)
+  vlist[[names(i)]] <- outp
 }
 
 
-# Quality Scores
-olist <- list()
-x <- fret[[1]]
-  for(i in actret){
-    print(names(i))
-    outp  <- roll_cor(x, i)
-    olist[[names(i)]] <- outp
-  }
-  
-save(olist, file = "/home/brian/Documents/projects/portfolio_manager_data/qualcor.RData")
 
 
-maxrow <- lapply(olist, )
-
-qual <- plyr::ldply(olist, rbind)
-
-qual <- do.call("cbind", olist)
-  
-  
  
 
 
@@ -162,13 +107,6 @@ qual <- do.call("cbind", olist)
 
 
 
-lapply(actret, FUN = function(x){
-  
-  df <- merge(x, fbase[[1]])
-  
-  
-  
-})
 
 
 
