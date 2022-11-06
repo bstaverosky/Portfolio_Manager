@@ -16,6 +16,8 @@ library(tibble)
 library(quantmod)
 library(plyr)
 
+# MOD 11/6/2022
+
 spy_data <- get_sp500_data()
 symbols  <- spy_data$Symbol
 prices   <- get_closing_prices(symbols)
@@ -26,6 +28,28 @@ load("/home/brian/Documents/projects/portfolio_manager_data/prices.RData")
 returns <- pricetoreturn(prices)
 ### Make Return DataFrame
 retdf   <- do.call("cbind", returns)
+
+# Transform RETDF to dataframe export as csv for MYSQL server
+# COLUMNS AS date, ticker and dreturn
+
+test <- data.frame(retdf)
+test$date <- as.Date(row.names(test))
+
+tsplit <- split(test, test$date)
+
+tmod <- lapply(tsplit, FUN = function(x){
+  pdate <- row.names(x)
+  x$date <- NULL
+  x <- data.frame(t(x))
+  x$date <- pdate
+  x$ticker <- row.names(x)
+  names(x) <- c("dreturn", "date", "ticker")
+  x <- x[,c("date", "ticker", "dreturn")]
+  x
+})
+
+tframe <- do.call("rbind", tmod)
+write.csv(tframe, file = "/home/brian/Documents/projects/portfolio_manager_data/returnsmysql.csv")
 
 ##### GET FUNDAMENTAL INDEX RETURNS #####
 fbase_symbols <- c("SPHQ", "RPG", "RPV")
@@ -96,12 +120,14 @@ for(i in actret){
   vlist[[names(i)]] <- outp
 }
 
+vlist_out <- cbind_diff_frames(vlist)
+value     <- do.call("cbind", vlist_out)
+save(value, file = "/home/brian/Documents/projects/portfolio_manager_data/valuedf.RData")
+load("/home/brian/Documents/projects/portfolio_manager_data/valuedf.RData") 
 
-
-
- 
-
-
+# Top Scoring Value Names
+test <- tail(value, 1)
+head(test[order(-test)],10)
 
 
 
