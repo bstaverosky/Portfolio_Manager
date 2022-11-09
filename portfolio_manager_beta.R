@@ -16,7 +16,7 @@ library(tibble)
 library(quantmod)
 library(plyr)
 
-# MOD 11/6/2022
+# MOD 11/8/2022
 
 spy_data <- get_sp500_data()
 symbols  <- spy_data$Symbol
@@ -49,7 +49,8 @@ tmod <- lapply(tsplit, FUN = function(x){
 })
 
 tframe <- do.call("rbind", tmod)
-write.csv(tframe, file = "/home/brian/Documents/projects/portfolio_manager_data/returnsmysql.csv")
+save(tframe, file = "/home/brian/Documents/projects/portfolio_manager_data/tframe.RData")
+write.csv(tframe, file = "/home/brian/Documents/projects/portfolio_manager_data/returnsmysql.csv",row.names = F)
 
 ##### GET FUNDAMENTAL INDEX RETURNS #####
 fbase_symbols <- c("SPHQ", "RPG", "RPV")
@@ -129,6 +130,7 @@ load("/home/brian/Documents/projects/portfolio_manager_data/valuedf.RData")
 test <- tail(value, 1)
 head(test[order(-test)],10)
 
+### Create Paneldata file
 
 
 
