@@ -1,0 +1,74 @@
+rm(list=ls())
+library(PortfolioAnalytics)
+library(DEoptim)
+library(ROI)
+require(ROI.plugin.glpk)
+require(ROI.plugin.quadprog)
+
+data(edhec)
+# Use the first 4 columns in edhec for a returns object
+returns <- edhec[, 1:4]
+colnames(returns) <- c("CA", "CTAG", "DS", "EM")
+print(head(returns, 5))
+
+# Get a character vector of the fund names
+fund.names <- colnames(returns)
+
+# Specify a portfolio object by passing a character vector for the
+# assets argument.
+pspec <- portfolio.spec(assets=fund.names)
+print.default(pspec)
+
+
+# Add the full investment constraint that specifies the weights must sum to 1.
+pspec <- add.constraint(portfolio=pspec,
+                        type="full_investment")
+
+
+pspec <- add.constraint(portfolio=pspec,
+                        type="box",
+                        min=0.05,
+                        max=0.4)
+
+pspec <- add.constraint(portfolio=pspec, type="position_limit", max_pos=3)
+
+pspec <- add.objective(portfolio=pspec,
+                       type='return',
+                       name='mean')
+
+
+opt_maxret <- optimize.portfolio(R=returns, portfolio=pspec,
+                                 optimize_method="ROI",
+                                 trace=TRUE)
+print(opt_maxret)
+
+
+
+
+library(PortfolioAnalytics)
+
+data(edhec)
+R <- edhec[, 1:5]
+colnames(R) <- c("CA", "CTAG", "DS", "EM", "EQM")
+funds <- colnames(R)
+#wgts <- data.frame("CA" = .1, "CTAG" = .3, "DS" = .4, "EM" = .1, "EQM" = .1)
+wgts <- c(0.1,0.3,0.4,0.1,0.1)
+wgts
+
+# Set up portfolio with objectives and constraints
+init.portf <- portfolio.spec(assets=funds,weight_seq = wgts)
+#init.portf <- portfolio.spec(weight_seq = wgts) # Does not work with this line added
+init.portf <- add.constraint(portfolio = init.portf, type="weight_sum", min_sum = .99, max_sum = 1.01)
+init.portf <- add.constraint(portfolio = init.portf, type="long_only")
+init.portf <- add.constraint(portfolio = init.portf, type="turnover", turnover_target = .2)
+
+# Add an objective to minimize portfolio standard deviation
+init.portf <- add.objective(portfolio=init.portf, type="risk", name="StdDev")
+print.default(init.portf)
+
+# Solve with DEoptim
+minStdDev.DE <- optimize.portfolio(R=R, portfolio=init.portf, optimize_method="DEoptim", search_size = 2000)
+minStdDev.DE
+
+
+

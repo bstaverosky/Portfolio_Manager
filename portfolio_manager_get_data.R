@@ -29,7 +29,7 @@ load("/home/brian/Documents/projects/portfolio_manager_data/prices.RData")
 pricedf <- do.call("cbind", prices)
 pricedf <- mysql_conv(pricedf, "price")
 save(pricedf, file="/home/brian/Documents/projects/portfolio_manager_data/pricedf.RData")
-
+load("/home/brian/Documents/projects/portfolio_manager_data/pricedf.RData")
 
 ### Make Return DataFrame
 returns <- pricetoreturn(prices)
