@@ -238,19 +238,32 @@ load("/home/brian/Documents/projects/portfolio_manager_data/prices.RData")
 returns <- pricetoreturn(prices)
 retdf   <- do.call("cbind", returns)
 
-wts <- target_list[[3935]]
-dte <- row.names(wts)
+### MULTIPLY WEIGHTS BY STOCK RETURNS TO GET PORTFOLIO RETURN ###
 
-period_returns <- retdf[which(index(retdf)==dte),]
+target_list <- Filter(Negate(is.null), target_list)
 
-setdiff(names(period_returns), names(wts))
+return_list <- list()
+for (i in 1:length(target_list)){
+  wts <- target_list[[i]]
+  dte <- row.names(wts)
+  
+  period_returns        <- retdf[which(index(retdf)==dte),]
+  sorted_period_returns <- period_returns[,sort(intersect(names(period_returns), names(wts)))]
+  period_wts            <- wts[,sort(intersect(names(sorted_period_returns), names(wts)))]
+  period_wts            <- as.xts(period_wts, order.by = as.Date(row.names(period_wts)))
+  
+  port_return <- sum(period_wts * sorted_period_returns, na.rm = T)
+  port_return <- data.frame(Date = dte, Return = port_return)
+  return_list[[i]] <- port_return 
+}
 
-sort(intersect(names(period_returns), names(wts)))
+strat <- do.call("rbind", return_list)
+strat <- as.xts(strat[,2], order.by = as.Date(strat$Date))
 
-test_return <- period_returns[,sort(intersect(names(period_returns), names(wts)))]
-test_wts    <- wts[,sort(intersect(names(period_returns), names(wts)))]
-test_wts    <- as.xts(test_wts, order.by = as.Date(row.names(test_wts)))
+charts.PerformanceSummary(strat)
 
-port_return <- sum(test_wts * test_return)
+
+
+
 
 
