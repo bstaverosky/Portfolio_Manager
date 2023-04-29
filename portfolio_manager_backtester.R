@@ -23,14 +23,11 @@ zscore <- function(x){
 }
 
 ### LOAD PANELDATA ###
-
 load("/home/brian/Documents/projects/portfolio_manager_data/panel_list.RData")
-
 
 # Get Month ends 
 mends <- unlist(lapply(panel_list, FUN = function(x){x$date[[1]]}))
 ym    <- unique(substr(mends, 1,7))
-
 mes <- sapply(ym, FUN = function(x){
   max(mends[grep(x, mends)])
 })
@@ -49,10 +46,10 @@ mes <- sapply(ym, FUN = function(x){
 load("/home/brian/Documents/projects/portfolio_manager_data/spanel.RData")
 
 ### SPANEL LAG DRETURN BY ONE DAY ###
-
 spanel <- do.call("rbind", spanel)
+# make a list of data frames by ticker
 spanel <- split(spanel, spanel$ticker)
-
+# lag returns for each data frame by one day
 spanel <- lapply(spanel, FUN = function(x){
   x$dreturn <- data.table::shift(x$dreturn, -1)
   x
@@ -118,77 +115,142 @@ scorel <- lapply(portl, FUN = function(x){
 #save(outdf, file = "/home/brian/Documents/projects/portfolio_manager_data/outdf.RData")
 load("/home/brian/Documents/projects/portfolio_manager_data/outdf.RData")
 
-
-### CREATE INITIAL PORTFOLIO ###
-# Create limited turnover portfolio
-#init <- T
-assets <- outdf[1,]
-port_spec <- portfolio.spec(names(assets))
-# Add the weight sum constaint
-port_spec <- add.constraint(portfolio = port_spec, 
-                            type = "full_investment")
-# Add long only constraint
-#port_spec <- add.constraint(portfolio = port_spec, 
-#                            type = "long_only")
-
-# Position Size Constraint
-port_spec <- add.constraint(portfolio = port_spec,
-                            type = "box", 
-                            min = 0.01,
-                            max = 0.01)
-
-
-#Position Limit Constraint
-port_spec <- add.constraint(portfolio = port_spec,
-                            type = "position_limit",
-                            max_pos = 100)
-
-# Add return objective 
-port_spec <- add.objective(portfolio = port_spec, type = "return", name = "mean")
-
-# Single Optim
-
-returns <- assets
-opt_single <- optimize.portfolio(R = returns,
-                                 portfolio = port_spec,
-                                 optimize_method = "ROI",
-                                 trace=TRUE)
-
-print(opt_single)
-
 ### CREATE NEXT PORTFOLIO WITH A TURNOVER CONSTRAINT ###
+#port_spec <- portfolio.spec(assets = names(outdf[2000,]), weight_seq = opt_single$weights)
 
-port_spec <- portfolio.spec(assets = names(outdf[2,]), weight_seq = opt_single$weights)
+# starting universe as a single row from outdf
+univ <- outdf[3000,]
+univ[is.na(univ)] <- 0
+
+# create equal weighted portfolio
+wts <- univ
+wts[which(univ > 0)] <- 1/length(wts[which(univ > 0)])
+minv <- as.numeric(ifelse(wts>0, wts - 0.002, 0))
+maxv <- wts + 0.002
+#maxv <- wts
+#maxv[which(maxv>0)] <- maxv[which(maxv>0)] + 0.02
+
+port_spec <- portfolio.spec(assets = names(univ))
 
 # Add the weight sum constaint
 port_spec <- add.constraint(portfolio = port_spec, 
                             type = "full_investment")
 
-port_spec <- add.constraint(portfolio=port_spec, type="turnover", turnover_target=0.006)
+port_spec <- add.constraint(portfolio=port_spec, type="turnover", turnover_target=0.2)
 
 # Position Size Constraint
 port_spec <- add.constraint(portfolio = port_spec,
                             type = "box", 
-                            min = 0.01,
-                            max = 0.01)
+                            min = minv,
+                            max = maxv)
 
 
 #Position Limit Constraint
 port_spec <- add.constraint(portfolio = port_spec,
                             type = "position_limit",
-                            max_pos = 100)
+                            max_pos = 400)
 
 # Add return objective 
 port_spec <- add.objective(portfolio = port_spec, type = "return", name = "mean")
 
-opt_next <- optimize.portfolio(R = outdf[3000,],
+opt_next <- optimize.portfolio(R = univ,
                                  portfolio = port_spec,
                                  optimize_method = "ROI",
+                                 #search_size = 10,
                                  trace=TRUE)
+
+length(which(opt_next$weights>0))
 
 ### Manually Calculate Turnover ###
+# Calculate turnover 
+portfolio_turnover(wts, opt_next$weights)
 
-portfolio_turnover(opt_single$weights, opt_next$weights)
+# starting universe as a single row from outdf
+nuniv <- outdf[3500,]
+nuniv[is.na(nuniv)] <- 0
+ovr <- 0.05
+
+
+# create equal weighted portfolio
+wts <- opt_next$weights
+#wts <- opt_next$weights
+#wts[which(univ > 0)] <- 1/length(wts[which(univ > 0)])
+pt <- 100
+
+while(pt > 0.2){
+
+  minv <- as.numeric(ifelse((wts-ovr)<=0,0,wts - ovr))
+  maxv <- as.numeric(ifelse(wts==0,0,wts + ovr))
+  #maxv[which(maxv>0)] <- maxv[which(maxv>0)] + ovr
+  
+  port_spec <- portfolio.spec(assets = names(nuniv), weight_seq = opt_next$weights)
+  # Add the weight sum constaint
+  #port_spec <- add.constraint(portfolio = port_spec, type = "full_investment")
+  
+  #port_spec <- add.constraint(portfolio=port_spec, type="turnover", turnover_target=0.2)
+  # Position Size Constraint
+  port_spec <- add.constraint(portfolio = port_spec,
+                              type = "box", 
+                              min = minv,
+                              max = maxv)
+  #Position Limit Constraint
+  port_spec <- add.constraint(portfolio = port_spec,
+                              type = "position_limit",
+                              max_pos = 100)
+  # Add return objective 
+  port_spec <- add.objective(portfolio = port_spec, type = "return", name = "mean")
+  opt_next2 <- optimize.portfolio(R = nuniv,
+                                 portfolio = port_spec,
+                                 optimize_method = "ROI",
+                                 #search_size = 10,
+                                 trace=TRUE)
+  
+  ### Manually Calculate Turnover ###
+  # Calculate turnover 
+  pt <- portfolio_turnover(opt_next$weights, opt_next2$weights)
+  print(pt)
+  
+  if (pt > 0.2){
+    ovr <- ovr - 0.001
+  }
+  print(ovr)
+}
+
+portfolio_turnover(wts, opt_next$weights)
+#### NEXT STEP IS TO STEP THROUGH A SINGLE OPTIM TRY WITH OVR at 0.05
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
