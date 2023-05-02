@@ -16,37 +16,64 @@ library(data.table)
 library(DEoptim)
 library(Rglpk)
 
-zscore <- function(x){
+### FUNCTIONS ###
+zscore                <- function(x){
   zs <- sapply(x, FUN = function(i){
     (i-mean(x, na.rm = T))/sd(x, na.rm = T)
   })
   zs
 }
+get_month_ends        <- function(panel_list){
+  dends <- unlist(lapply(panel_list, FUN = function(x){x$date[[1]]}))
+  ym    <- unique(substr(dends, 1,7))
+  mes <- sapply(ym, FUN = function(x){
+    max(mends[grep(x, mends)])
+  })
+}
+get_multifactor_score <- function(panel_list){
+  panel_with_score <- lapply(panel_list, FUN = function(x){
+    x$quality <- zscore(x$quality)
+    x$growth  <- zscore(x$growth)
+    x$value   <- zscore(x$value)
+    x$score   <- rowSums(x[,c("quality","growth","value")])
+    x
+  })
+  save(panel_with_score, file = "/home/brian/Documents/projects/portfolio_manager_data/panel_with_score.RData")
+  panel_with_score
+}
+lag_panel_score       <- function(panel_with_score){
+  
+  panel_with_score <- do.call("rbind", panel_with_score)
+  # make a list of data frames by ticker
+  panel_with_score <- split(panel_with_score, panel_with_score$ticker)
+  # lag returns for each data frame by one day
+  panel_with_score <- lapply(panel_with_score, FUN = function(x){
+    x$dreturn <- data.table::shift(x$dreturn, -1)
+    x
+  })
+  panel_with_score <- do.call("rbind", panel_with_score)
+  panel_with_score <- split(panel_with_score, panel_with_score$date)
+  lagged_panel <- panel_with_score
+  lagged_panel
+  
+}
 
 ### LOAD PANELDATA ###
+### THIS WILL BECOME A SQL DATABASE EVENTUALLY
+### AND WILL BE PULLED VIA A SQL QUERY
 load("/home/brian/Documents/projects/portfolio_manager_data/panel_list.RData")
 
-# Get Month ends 
-mends <- unlist(lapply(panel_list, FUN = function(x){x$date[[1]]}))
-ym    <- unique(substr(mends, 1,7))
-mes <- sapply(ym, FUN = function(x){
-  max(mends[grep(x, mends)])
-})
+# GET MONTH ENDS
+get_month_ends(panel_list)
 
-### Create Multifactor Score ###
-
-# spanel <- lapply(panel_list, FUN = function(x){
-#   x$quality <- zscore(x$quality)
-#   x$growth  <- zscore(x$growth)
-#   x$value   <- zscore(x$value)
-#   x$score   <- rowSums(x[,c("quality","growth","value")])
-#   x
-# })
-
-#save(spanel, file = "/home/brian/Documents/projects/portfolio_manager_data/spanel.RData")
+### CREATE PANEL WITH MULTIFACTOR SCORE ###
+#panel_with_score <- get_multifactor_score(panel_list)
 load("/home/brian/Documents/projects/portfolio_manager_data/spanel.RData")
+panel_with_score <- spanel
 
-### SPANEL LAG DRETURN BY ONE DAY ###
+### LAG THE PANEL WITH MULTIFACTOR SCORE BY ONE DAY ###
+lagged_panel <- lag_panel_score(panel_with_score)
+
 spanel <- do.call("rbind", spanel)
 # make a list of data frames by ticker
 spanel <- split(spanel, spanel$ticker)
@@ -246,7 +273,6 @@ return_list <- list()
 for (i in 1:length(target_list)){
   wts <- target_list[[i]]
   dte <- row.names(wts)
-  
   period_returns        <- retdf[which(index(retdf)==dte),]
   sorted_period_returns <- period_returns[,sort(intersect(names(period_returns), names(wts)))]
   period_wts            <- wts[,sort(intersect(names(sorted_period_returns), names(wts)))]
