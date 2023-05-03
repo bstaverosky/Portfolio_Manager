@@ -57,6 +57,34 @@ lag_panel_score       <- function(panel_with_score){
   lagged_panel
   
 }
+### Backtest Functions ###
+get_unconstrained_equal_weight_strat <- function(daily_portfolios){
+  
+  retl <- lapply(daily_portfolios, FUN = function(x){
+    return      <- sum(x$dreturn * (1/100))
+    outf        <- data.frame(date = x$date[[1]], strat = as.numeric(return))
+    outf$strat  <- as.numeric(outf$strat)
+    outf        <- xts(outf[,"strat"], order.by = as.Date(x$date[[1]]))
+    names(outf) <- "strat" 
+    outf
+  })
+  
+  ### GET BMK ###
+  
+  bmk <- "SPY"
+  bmk <- getSymbols(bmk, src = "yahoo", from = "1900-01-01", auto.assign = FALSE)
+  bmk <- bmk[,4]
+  bmk <- dailyReturn(bmk)
+  
+  strat <- do.call("rbind", retl)
+  strat <- merge(strat, bmk)
+  strat <- strat[complete.cases(strat),]
+  
+  charts.PerformanceSummary(strat)
+  stratm <- strat["2018/"]
+  charts.PerformanceSummary(stratm)
+  
+}
 
 ### LOAD PANELDATA ###
 ### THIS WILL BECOME A SQL DATABASE EVENTUALLY
@@ -74,50 +102,19 @@ panel_with_score <- spanel
 ### LAG THE PANEL WITH MULTIFACTOR SCORE BY ONE DAY ###
 lagged_panel <- lag_panel_score(panel_with_score)
 
-spanel <- do.call("rbind", spanel)
-# make a list of data frames by ticker
-spanel <- split(spanel, spanel$ticker)
-# lag returns for each data frame by one day
-spanel <- lapply(spanel, FUN = function(x){
-  x$dreturn <- data.table::shift(x$dreturn, -1)
-  x
-})
-spanel <- do.call("rbind", spanel)
-spanel <- split(spanel, spanel$date)
-
 ### Create Daily Portfolios
-portl <- lapply(spanel, FUN = function(x){
+daily_portfolios <- lapply(lagged_panel, FUN = function(x){
   x <- head(x[order(-x$score),],100)
   x
 })
-# Make Return List
-retl <- lapply(portl, FUN = function(x){
-  return      <- sum(x$dreturn * (1/100))
-  outf        <- data.frame(date = x$date[[1]], strat = as.numeric(return))
-  outf$strat  <- as.numeric(outf$strat)
-  outf        <- xts(outf[,"strat"], order.by = as.Date(x$date[[1]]))
-  names(outf) <- "strat" 
-  outf
-})
 
-### GET BMK ###
+### Make List of Equal Weighted Strategy Returns
+get_unconstrained_equal_weight_strat(daily_portfolios)
 
-bmk <- "SPY"
-bmk <- getSymbols(bmk, src = "yahoo", from = "1900-01-01", auto.assign = FALSE)
-bmk <- bmk[,4]
-bmk <- dailyReturn(bmk)
-
-strat <- do.call("rbind", retl)
-strat <- merge(strat, bmk)
-strat <- strat[complete.cases(strat),]
-
-charts.PerformanceSummary(strat)
-stratm <- strat["2018/"]
-charts.PerformanceSummary(stratm)
 
 ### Convert Portfolio List to large xts for PortfolioAnalytics ###
 
-scorel <- lapply(portl, FUN = function(x){
+scorel <- lapply(daily_portfolios, FUN = function(x){
   df <- t(data.frame(x$score))
   df <- as.data.frame(df)
   names(df) <- x$ticker
